@@ -99,95 +99,102 @@ async def on_message(msg):
     msg_content = msg.content.lower()
     param = None
     if msg_content.startswith('ado '):
-        print(msg_content)
-        msg_content = msg_content[4:].strip()
+        if msg.channel.id == 787359133590355968 or msg.channel.id == 779165942147448832:
+            print(msg_content)
+            msg_content = msg_content[4:].strip()
 
-        if msg_content == 'help':
-            msg_to_send = """Hello to daily math questions
-Below is a list of commands for the bot ado
-Note before typing the command please proceed it with \"ado\"
-- animal (difficulty) --> gives you a animal question
-- anime (difficulty) --> gives you a anime question
-- bg (difficulty) --> gives you a board game question
-- book (difficulty) --> gives you a book question
-- cartoon (difficulty) --> gives you a cartoon question
-- celebrity (difficulty) --> gives you a celebrity question
-- computer (difficulty) --> gives you a computer question
-- film (difficulty) --> gives you a film question
-- geography (difficulty) --> gives you a geography question
-- gk (difficulty) --> gives you a general knowledge question
-- history (difficulty) --> gives you a history question
-- math (difficulty) --> gives you a math question
-- music (difficulty) --> gives you a music question
-- tv (difficulty) --> gives you a television question
-- vehicle (difficulty) --> gives you a vehicle question
-- vg (difficulty) --> gives you a video game question
-- sport (difficulty) --> gives you a sport question
-- science (difficulty) --> gives you a science question
-- random fact ; rf --> gives you a random fact
-- random cat fact ; rcf --> gives you a random fact about cats
-- (type answer) --> check if you're answer is correct
-- reveal solution --> reveals the answer
-- help --> get help... duh
-Note: The difficulties are (easy, medium, hard)"""
+            if msg_content == 'help':
+                msg_to_send = """Hello to daily math questions
+    Below is a list of commands for the bot ado
+    Note before typing the command please proceed it with \"ado\"
+    - animal (difficulty) --> gives you a animal question
+    - anime (difficulty) --> gives you a anime question
+    - bg (difficulty) --> gives you a board game question
+    - book (difficulty) --> gives you a book question
+    - cartoon (difficulty) --> gives you a cartoon question
+    - celebrity (difficulty) --> gives you a celebrity question
+    - computer (difficulty) --> gives you a computer question
+    - film (difficulty) --> gives you a film question
+    - geography (difficulty) --> gives you a geography question
+    - gk (difficulty) --> gives you a general knowledge question
+    - history (difficulty) --> gives you a history question
+    - math (difficulty) --> gives you a math question
+    - music (difficulty) --> gives you a music question
+    - tv (difficulty) --> gives you a television question
+    - vehicle (difficulty) --> gives you a vehicle question
+    - vg (difficulty) --> gives you a video game question
+    - sport (difficulty) --> gives you a sport question
+    - science (difficulty) --> gives you a science question
+    - random fact ; rf --> gives you a random fact
+    - random cat fact ; rcf --> gives you a random fact about cats
+    - (type answer) --> check if you're answer is correct
+    - reveal solution --> reveals the answer
+    - help --> get help... duh
+    Note: The difficulties are (easy, medium, hard)"""
 
-        elif msg_content == 'reveal solution' or msg_content == 'reveal answer' or msg_content == 'show answer' or msg_content == 'show solution' or msg_content == 'reveal' or msg_content == 'show':
-            msg_to_send = f'The solution is {data[1]}'
+            elif msg_content == 'reveal solution' or msg_content == 'reveal answer' or msg_content == 'show answer' or msg_content == 'show solution' or msg_content == 'reveal' or msg_content == 'show':
+                msg_to_send = f'The solution is {data[1]}'
 
-        elif msg_content == 'random cat fact' or msg_content == 'rcf':
-            data = get_data('https://catfact.ninja/fact')
-            print(data)
-            msg_to_send = data['fact']
+            elif msg_content == 'random cat fact' or msg_content == 'rcf':
+                data = get_data('https://catfact.ninja/fact')
+                print(data)
+                msg_to_send = data['fact']
 
-        elif msg_content == 'random fact' or msg_content == 'rf':
-            data = get_data('https://useless-facts.sameerkumar.website/api')
-            print(data)
-            msg_to_send = data['data']
+            elif msg_content == 'random fact' or msg_content == 'rf':
+                data = get_data('https://useless-facts.sameerkumar.website/api')
+                print(data)
+                msg_to_send = data['data']
 
-        elif msg_content.split()[0] in subject_codes.keys():
-            subject = msg_content.split()[0]
+            elif msg_content.split()[0] in subject_codes.keys():
+                subject = msg_content.split()[0]
 
-            if 'easy' in msg_content:
-                param = 'easy'
-            elif 'medium' in msg_content:
-                param = 'medium'
-            elif 'hard' in msg_content:
-                param = 'hard'
+                if 'easy' in msg_content:
+                    param = 'easy'
+                elif 'medium' in msg_content:
+                    param = 'medium'
+                elif 'hard' in msg_content:
+                    param = 'hard'
 
-            if param:
-                res = get_data(base_url, param, subject_codes[subject])
-
-                while res['response_code'] != 0:
-                    print(res['response_code'])
-                    if res['response_code'] == 4:
-                        await msg.channel.send('resetting token')
-                        try:
-                            requests.get(f'https://opentdb.com/api_token.php?command=reset&token={question_token}')
-                        except Exception as exp:
-                            return f'Error retrieving data ({exp})'
+                if param:
                     res = get_data(base_url, param, subject_codes[subject])
 
-                data = process_data(res)
-                msg_to_send = f'{data[0]} \navailable answers: {data[2]}'
+                    while res['response_code'] != 0:
+                        print(res['response_code'])
+                        if res['response_code'] == 4:
+                            await msg.channel.send('resetting token')
+                            try:
+                                requests.get(f'https://opentdb.com/api_token.php?command=reset&token={question_token}')
+                            except Exception as exp:
+                                return f'Error retrieving data ({exp})'
+                        res = get_data(base_url, param, subject_codes[subject])
+
+                    data = process_data(res)
+                    msg_to_send = f'{data[0]} \navailable answers: {data[2]}'
+
+                else:
+                    msg_to_send = 'Try again and please enter a difficulty level (easy, medium, hard)'
 
             else:
-                msg_to_send = 'Try again and please enter a difficulty level (easy, medium, hard)'
+                ans = msg_content.lower().strip()
+                solution = data[1].lower().strip()
+
+                if ans == solution:
+                    msg_to_send = 'Hurray you got the answer corre' \
+                                  'ct'
+                else:
+                    msg_to_send = 'Sorry you\'re answer is wrong. Don\'t worry you can try again.' \
+                                  'If you want to know what was the correct answer type "ado reveal solution"'
+
+            try:
+                await msg.channel.send(msg_to_send)
+            except discord.errors.HTTPException:
+                pass
 
         else:
-            ans = msg_content.lower().strip()
-            solution = data[1].lower().strip()
-
-            if ans == solution:
-                msg_to_send = 'Hurray you got the answer correct'
-            else:
-                msg_to_send = 'Sorry you\'re answer is wrong. Don\'t worry you can try again.' \
-                              'If you want to know what was the correct answer type "ado reveal solution"'
-
-        try:
-            await msg.channel.send(msg_to_send)
-        except discord.errors.HTTPException:
-            pass
-
+            try:
+                await msg.channel.send('please use ado bot in {bot commands} or in {random facts}')
+            except discord.errors.HTTPException:
+                pass
 
 client.loop.create_task(send_rf())
 client.loop.create_task(keep_token_active())
