@@ -1,19 +1,19 @@
 import asyncio
-
 import discord
 import requests
 import base64
 import random
-import time
-import threading
 
 with open('private data.txt') as f:
     token = f.read()
 
 client = discord.Client()
-math_url = 'https://opentdb.com/api.php?amount=1&category=SUBJECTCODE&difficulty=spotholder&encode=base64&token=YOURTOKENHERE'
+base_url = 'https://opentdb.com/api.php?amount=1&category=SUBJECTCODE&difficulty=spotholder&encode=base64&token=YOURTOKENHERE'
 data = ()
-url = "https://opentdb.com/api_token.php?command=request"
+token_url = "https://opentdb.com/api_token.php?command=request"
+
+res = requests.get(token_url)
+question_token = res.json()['token']
 
 subject_codes = {
     'math': 19,
@@ -34,22 +34,14 @@ subject_codes = {
     'celebrity': 26,
     'book': 10,
     'music': 12,
-
 }
 
 
-def keep_token_active():
+async def keep_token_active():
     while True:
-        print('running')
-        time.sleep(330)
-        requests.get(math_url)
+        await asyncio.sleep(20880)
+        requests.get(base_url)
         print('sent msg to keep token active')
-
-
-res = requests.get(url)
-question_token = res.json()['token']
-thread = threading.Thread(target=keep_token_active)
-thread.start()
 
 
 def get_data(url, difficulty='', subject_code=''):
@@ -97,9 +89,10 @@ async def send_rf():
         print(data)
         msg_to_send = data['data']
         await channel.send(msg_to_send)
-        await asyncio.sleep(86400) #  one day
+        await asyncio.sleep(86400)  # one day
 
 
+print('running')
 @client.event
 async def on_message(msg):
     global data
@@ -151,36 +144,36 @@ Note: The difficulties are (easy, medium, hard)"""
             print(data)
             msg_to_send = data['data']
 
-        elif 'easy' in msg_content or 'medium' in msg_content or 'hard' in msg_content:
+        elif msg_content in subject_codes.keys():
             subject = msg_content.split()[0]
             if subject[-1] == 's':
                 subject = subject[:-1]
-            if subject in subject_codes.keys():
-                if 'easy' in msg_content:
-                    param = 'easy'
-                if 'medium' in msg_content:
-                    param = 'medium'
-                if 'hard' in msg_content:
-                    param = 'hard'
 
-                if param:
-                    res = get_data(math_url, param, subject_codes[subject])
+            if 'easy' in msg_content:
+                param = 'easy'
+            elif 'medium' in msg_content:
+                param = 'medium'
+            elif 'hard' in msg_content:
+                param = 'hard'
 
-                    while res['response_code'] != 0:
-                        print(res['response_code'])
-                        if res['response_code'] == 4:
-                            await msg.channel.send('resetting token')
-                            try:
-                                requests.get(f'https://opentdb.com/api_token.php?command=reset&token={question_token}')
-                            except Exception as exp:
-                                return f'Error retrieving data ({exp})'
-                        res = get_data(math_url, param, subject_codes[subject])
+            if param:
+                res = get_data(base_url, param, subject_codes[subject])
 
-                    data = process_data(res)
-                    msg_to_send = f'{data[0]} \navailable answers: {data[2]}'
+                while res['response_code'] != 0:
+                    print(res['response_code'])
+                    if res['response_code'] == 4:
+                        await msg.channel.send('resetting token')
+                        try:
+                            requests.get(f'https://opentdb.com/api_token.php?command=reset&token={question_token}')
+                        except Exception as exp:
+                            return f'Error retrieving data ({exp})'
+                    res = get_data(base_url, param, subject_codes[subject])
 
-                else:
-                    msg_to_send = 'Try again and please enter a difficulty level (easy, medium, hard)'
+                data = process_data(res)
+                msg_to_send = f'{data[0]} \navailable answers: {data[2]}'
+
+            else:
+                msg_to_send = 'Try again and please enter a difficulty level (easy, medium, hard)'
 
         else:
             ans = msg_content.lower().strip()
@@ -197,5 +190,7 @@ Note: The difficulties are (easy, medium, hard)"""
         except discord.errors.HTTPException:
             pass
 
+
 client.loop.create_task(send_rf())
+client.loop.create_task(keep_token_active())
 client.run(token)
