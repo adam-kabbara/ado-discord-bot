@@ -144,10 +144,8 @@ Note: The difficulties are (easy, medium, hard)"""
             print(data)
             msg_to_send = data['data']
 
-        elif msg_content in subject_codes.keys():
+        elif msg_content.split()[0] in subject_codes.keys():
             subject = msg_content.split()[0]
-            if subject[-1] == 's':
-                subject = subject[:-1]
 
             if 'easy' in msg_content:
                 param = 'easy'
