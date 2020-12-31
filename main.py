@@ -99,7 +99,7 @@ async def on_message(msg):
     msg_content = msg.content.lower()
     param = None
     if msg_content.startswith('ado '):
-        if msg.channel.id == 787359133590355968 or msg.channel.id == 779165942147448832:
+        if msg.channel.id == 787359133590355968 or msg.channel.id == 779165942147448832 or msg.channel.id == 793849835505451058:
             print(msg_content)
             msg_content = msg_content[4:].strip()
 
