@@ -3,6 +3,7 @@ import discord
 import requests
 import base64
 import random
+from help_msg import help_msg
 
 with open('private data.txt') as f:
     token = f.read()
@@ -14,7 +15,7 @@ token_url = "https://opentdb.com/api_token.php?command=request"
 res = requests.get(token_url)
 question_token = res.json()['token']
 
-trivia_to_letter = {'a': 0, 'b': 1, 'c': 2, 'd' :3}
+trivia_to_letter = {'a': 0, 'b': 1, 'c': 2, 'd': 3}
 
 subject_codes = {
     'math': 19,
@@ -94,6 +95,8 @@ async def send_rf(channel):
 
 
 print('running')
+
+
 @client.event
 async def on_message(msg):
     global data
@@ -104,33 +107,18 @@ async def on_message(msg):
         msg_content = msg_content[4:].strip()
 
         if msg_content == 'help':
-            msg_to_send = """Hello to daily math questions
-    Below is a list of commands for the bot ado
-    Note before typing the command please proceed it with \"ado\"
-    - animal (difficulty) --> gives you a animal question
-    - anime (difficulty) --> gives you a anime question
-    - bg (difficulty) --> gives you a board game question
-    - book (difficulty) --> gives you a book question
-    - cartoon (difficulty) --> gives you a cartoon question
-    - celebrity (difficulty) --> gives you a celebrity question
-    - computer (difficulty) --> gives you a computer question
-    - film (difficulty) --> gives you a film question
-    - geography (difficulty) --> gives you a geography question
-    - gk (difficulty) --> gives you a general knowledge question
-    - history (difficulty) --> gives you a history question
-    - math (difficulty) --> gives you a math question
-    - music (difficulty) --> gives you a music question
-    - tv (difficulty) --> gives you a television question
-    - vehicle (difficulty) --> gives you a vehicle question
-    - vg (difficulty) --> gives you a video game question
-    - sport (difficulty) --> gives you a sport question
-    - science (difficulty) --> gives you a science question
-    - random fact ; rf --> gives you a random fact
-    - random cat fact ; rcf --> gives you a random fact about cats
-    - (type answer) --> check if you're answer is correct
-    - reveal / show --> reveals the answer
-    - help --> get help... duh
-    Note: The difficulties are (easy, medium, hard)"""
+            msg_to_send = help_msg
+
+        elif msg_content == 'die':
+            msg_to_send = f'ill kill you first {msg.author.mention}'
+
+        elif 'gay' in msg_content and 'is' in msg_content:
+            if '<@!739167113880535191>' in msg_content:
+                msg_to_send = 'no he isn\'t'
+            elif '<@!389072296805007380>' in msg_content:
+                msg_to_send = 'yes he is'
+            else:
+                msg_to_send = random.choice(['yes he is', 'no he isn\'t'])
 
         elif msg_content == 'reveal solution' or msg_content == 'reveal answer' or msg_content == 'show answer' or msg_content == 'show solution' or msg_content == 'reveal' or msg_content == 'show':
             msg_to_send = f'The solution is {data[1]}'
@@ -166,13 +154,12 @@ async def on_message(msg):
                             requests.get(f'https://opentdb.com/api_token.php?command=reset&token={question_token}')
                         except Exception as exp:
                             return f'Error retrieving data ({exp})'
-                            
+
                     elif res['response_code'] == 3:
                         res = requests.get(token_url)
                         question_token = res.json()['token']
-                    
+
                     res = get_data(base_url, param, subject_codes[subject])
-                    
 
                 data = process_data(res)
                 msg_to_send = f'{data[0]} \navailable answers: {data[2]}'
@@ -182,29 +169,33 @@ async def on_message(msg):
 
         else:
             ans = msg_content.lower().strip()
-            solution = data[1].lower().strip()
-            
-            if ans in trivia_to_letter.keys():
-                index = trivia_to_letter[ans]
-                if solution == data[2][index].lower().strip():
+            try:
+                solution = data[1].lower().strip()
+            except IndexError as ero:
+                print(f'error {ero}')
+            else:
+
+                if ans in trivia_to_letter.keys():
+                    index = trivia_to_letter[ans]
+                    if solution == data[2][index].lower().strip():
+                        msg_to_send = 'Hurray you got the answer correct'
+                    else:
+                        msg_to_send = 'Sorry you\'re answer is wrong. Don\'t worry you can try again.' \
+                                      'If you want to know what was the correct answer type "ado reveal solution"'
+
+                elif ans == solution:
                     msg_to_send = 'Hurray you got the answer correct'
                 else:
-                    msg_to_send = 'Hurray you got the answer corre' \
-                              'ct'
-                
-
-            elif ans == solution:
-                msg_to_send = 'Hurray you got the answer correct'
-            else:
-                msg_to_send = 'Sorry you\'re answer is wrong. Don\'t worry you can try again.' \
-                              'If you want to know what was the correct answer type "ado reveal solution"'
+                    msg_to_send = 'Sorry you\'re answer is wrong. Don\'t worry you can try again.' \
+                                  'If you want to know what was the correct answer type "ado reveal solution"'
 
         try:
             await msg.channel.send(msg_to_send)
         except discord.errors.HTTPException:
             pass
 
-#client.loop.create_task(send_rf(787359133590355968))  # young prose server
-#client.loop.create_task(send_rf(795912942678704128))  # grade 10 serve
+
+# client.loop.create_task(send_rf(787359133590355968))  # young prose server
+# client.loop.create_task(send_rf(795912942678704128))  # grade 10 serve
 client.loop.create_task(keep_token_active())
 client.run(token)
