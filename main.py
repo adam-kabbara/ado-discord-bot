@@ -1,6 +1,5 @@
 import asyncio
 import discord
-import requests
 import base64
 import random
 import os
@@ -11,30 +10,26 @@ import private_data
 from collections import defaultdict
 import copy
 from aiohttp import ClientSession
-from io import BytesIO
 
 token = private_data.ids['discord']
 weather_token = private_data.ids['weather']
 
 client = discord.Client()
-base_url = 'https://opentdb.com/api.php?amount=1&encode=base64'
-token_url = "https://opentdb.com/api_token.php?command=request"
-weather_url = "http://api.openweathermap.org/data/2.5/weather?"
-weather_img_url = "http://openweathermap.org/img/wn/CODE@2x.png"
-res = requests.get(token_url)
-question_token = res.json()['token']
-trivia_asked = False
-trivia_random = None
-difficulty = None
-data = ()
+trivia_url1 = 'https://opentdb.com/api.php?amount=1&encode=base64' # url1 to get trivia
+token_url = "https://opentdb.com/api_token.php?command=request" # url1 to get trivia token
+weather_url = "http://api.openweathermap.org/data/2.5/weather?" # url to get weather
+weather_img_url = "http://openweathermap.org/img/wn/CODE@2x.png" # url to get weather img
+trivia_url2 = 'https://beta-trivia.bongo.best'
+dict_of_servers = {}
+
 
 trivia_to_letter = {'a': 0, 'b': 1, 'c': 2, 'd': 3}
 loss_msgs = ['Sorry you\'re answer is wrong. Don\'t worry you can try again.', 
             'I actually thought humans were smarter than that',
-            'damn you have -100 IQ... congrats',
-            'dumbass thats the wrong answer',
-            'are you fricking kidding me? That is completely wrong',
-            'are you sure you are not an ape. That was the wrong answer']
+            'Damn you have -100 IQ... congrats',
+            'Dumbass thats the wrong answer',
+            'Are you fricking kidding me? That is completely wrong',
+            'Are you sure you are not an ape. That was the wrong answer']
 
 win_msgs = ['Hurray you got the answer correct', 
             'Finally a smart one. That was the correct answer',
@@ -64,14 +59,6 @@ subject_codes = {
     'music': 12,
 }
 
-
-def get_data(url, data={}):
-    try:
-        res = requests.get(url, params=data)
-    except Exception as exp:
-        print(f'Error retrieving data ({exp})')
-    else:
-        return res.json()
 
 async def get_data(url, data={}):
     async with ClientSession() as session:
@@ -109,7 +96,7 @@ async def send_rf(channel):
     await client.wait_until_ready()
     channel = client.get_channel(channel)
     while True:
-        data = get_data(get_random_question_url())
+        data = await get_data(get_random_question_url())
         print(data)
         try: 
             msg_to_send = data['data']
@@ -123,89 +110,19 @@ def get_random_question_url():
     url = random.choice(['https://uselessfacts.jsph.pl/random.json?language=en', 'https://useless-facts.sameerkumar.website/api'])
     return url
 
-def get_points(user, channel):
-    dd = defaultdict(float)
-    user = str(user)
-    int_dict = dict()
-    with open ('points.json') as f:
-        points = json.load(f)
-    points = points[str(channel)]
-    dd.update(points)
-    for k, v in dd.items():
-        int_dict[k] = int(v)
-    try:
-        return int_dict[user]
-    except KeyError:
-        return 0
 
-def update_points(dictionary, channel):
-    dd = defaultdict(float)
-    main_dict = dict()
-    dictionary = {str(k): v for k, v in  dictionary.items()}
-    with open ('points.json') as f:
-        points = json.load(f)
-
-    points.setdefault(str(channel), {})
-
-    other = copy.deepcopy(points)
-    del other[str(channel)]
-    main_dict.update(other)
-
-    points = points[str(channel)]
-    dd.update(points)
-    for key, value in dictionary.items():
-        dd[key] += value
-    
-    main_dict[str(channel)] = dd
-    with open('points.json', 'w') as f:
-        json.dump(main_dict, f)
-
-def get_top_points(channel):
-    with open ('points.json') as f:
-        points = json.load(f)
-    
-    points.setdefault(str(channel), {})
-    points = points[str(channel)]
-    top = []
-    int_dict = dict()
-
-    for k, v in points.items():
-        int_dict[k] = int(v)
-    
-    sorted_keys = sorted(int_dict, key=int_dict.get, reverse=True)
-    for i, k in enumerate(sorted_keys):
-        if i<=4:
-            top.append((k, int_dict[k]))
-        else:
-            break 
-    return top
-
-def add_points(difficulty, trivia_random, msg):
-    if trivia_random:
-        points_to_add = 10
-    else:
-        if difficulty == 'easy':
-            points_to_add = random.randint(1, 3)
-        elif difficulty == 'medium':
-            points_to_add = random.randint(3, 5)
-        else:
-            points_to_add = random.randint(6, 8)
-    print(points_to_add)
-    update_points({msg.author.id: points_to_add}, msg.guild.id)
-
-
-def handel_token_error(res):
+async def handel_token_error(res):
     while res['response_code'] != 0:
         print(f'error code {res["response_code"]}')
         if res['response_code'] == 4:
             try:
-                res = requests.get(f'https://opentdb.com/api_token.php?command=reset&token={question_token}').json()
+                res = await get_data(f'https://opentdb.com/api_token.php?command=reset', data={'token': question_token})
             except Exception as exp:
                 return f'Error retrieving data ({exp})'
 
         elif res['response_code'] == 3:
             print('debug')
-            res = (requests.get(token_url)).json()
+            res = await get_data(token_url)
             question_token = res['token']
             
     return res
@@ -269,36 +186,60 @@ def get_weather_msg(code):
     e.add_field(name='Wind Speed', value=f'Wind Speed: {wind} km/hour', inline=True)
     e.add_field(name='Humidity', value=f'Humidity: {humidity} %', inline=True)
     return e
+
+
         
 print('running')
-
 @client.event
 async def on_message(msg):
-    global trivia_asked, question_token, trivia_random, difficulty, data
-    if msg.content.isdigit():
-        msg_content = msg.content
-    else:
-        msg_content = msg.content.lower()[4:].strip()
-    msg_to_send = None
-    e = None
-     
 
-    if msg.content.lower().startswith('ado '):
+    msg_content = msg.content.lower()[4:].strip()
+     
+    if msg.content.lower().startswith('tado '):
+        
+        try: 
+            s = dict_of_servers[msg.guild.id]
+            await s.async_init()
+        except KeyError:
+            dict_of_servers[msg.guild.id] = Server(msg.guild.id)
+            s = dict_of_servers[msg.guild.id]
+            await s.async_init()
+
         print(msg.content.lower())
+        await s.process_msg(msg)
+
+
+
+
+class Server:
+    def __init__(self, server_id):
+        self.server_id = server_id
+        self.trivia_asked = False
+        self.trivia_random = None
+        self.difficulty = None
+        self.data = ()
+        self.msg = None
+        self.question_token = None
+        print(self.question_token)
+
+    async def async_init(self):
+        self.question_token = await get_data(token_url)
+        self.question_token = self.question_token['token']
+
+    async def process_msg(self, msg):
+        self.msg = msg
+        msg_to_send = None
+        e = None
+        msg_content = self.msg.content.lower()[4:].strip()
 
         if msg_content == 'help':
             e = help_msg
-
-        if msg_content == 'test':
-            import time
-            await asyncio.sleep(5)
-            msg_to_send = 'test'
             
         elif msg_content == 'ping':
             msg_to_send = 'pong'
         
         elif msg_content == 'help weather':
-            msg_to_send = help_weather_msg # todo
+            msg_to_send = help_weather_msg
 
         elif msg_content.startswith('w'):
             error_msg = 'please use "ado help weather" to see commands for weather'
@@ -314,19 +255,19 @@ async def on_message(msg):
                     city_code_lst = get_city_code(city, country)
                     if city_code_lst:
                         city_code = city_code_lst[0]['id']
-                        data = await get_data(weather_url, data={'appid': weather_token,
+                        self.data = await get_data(weather_url, data={'appid': weather_token,
                                                     'id': city_code,
                                                     'units': 'metric'})
-                        e = get_weather_msg(data)
+                        e = get_weather_msg(self.data)
                     else:
                         msg_to_send = error_msg2
 
                 elif len(city) == 3: # means its a zip code prefix
                     country_code = get_country_code(country).lower()
-                    data = await get_data(weather_url, data={'appid': weather_token,
+                    self.data = await get_data(weather_url, data={'appid': weather_token,
                                                         'units': 'metric',
                                                         'zip': f'{city},{country_code}'})
-                    e = get_weather_msg(data)
+                    e = get_weather_msg(self.data)
                         
                 else:
                     msg_to_send = f'Sorry city/provence was not found. {error_msg2}'
@@ -334,7 +275,7 @@ async def on_message(msg):
 
         elif msg_content == 'restart':
             try:
-                await msg.channel.send('Restarting Ado Bot')
+                await self.msg.channel.send('Restarting Ado Bot')
             except discord.errors.HTTPException:
                 print('network error')
                 
@@ -343,16 +284,16 @@ async def on_message(msg):
 
         elif msg_content.startswith('points'):
             if msg_content == "points":
-                points = get_points(msg.author.id, msg.guild.id)
+                points = self.get_points(self.msg.author.id)
                 msg_to_send = f'you have {points} points'
 
-            elif len(msg.mentions) == 1:
-                user = msg.mentions[0].id
-                points = get_points(user, msg.guild.id)
-                msg_to_send = f'{msg.mentions[0].mention} has {points} points'
+            elif len(self.msg.mentions) == 1:
+                user = self.msg.mentions[0].id
+                points = self.get_points(user)
+                msg_to_send = f'{self.msg.mentions[0].mention} has {points} points'
             
             elif msg_content.split()[1] == 'top':
-                top = get_top_points(msg.guild.id)
+                top = self.get_top_points()
                 e = discord.Embed(title='Top points', color=discord.Color.red())
                 for k, v in top:
                     user = await client.fetch_user(k)
@@ -360,7 +301,7 @@ async def on_message(msg):
                     
 
         elif msg_content == 'die':
-            msg_to_send = f'ill kill you first {msg.author.mention}'
+            msg_to_send = f'ill kill you first {self.msg.author.mention}'
         elif msg_content == 'sad':
             msg_to_send = 'ado is sad u are using dank memer instead of him'
 
@@ -373,86 +314,86 @@ async def on_message(msg):
             if len(user_id) == 0:
                 msg_to_send = 'You didn\'t mention who you wanted to kill. I really thought humans were smarter than this'
             else:
-                msg_to_send = f'{msg.author.mention}, you just killed {user_id}'
+                msg_to_send = f'{self.msg.author.mention}, you just killed {user_id}'
 
         elif msg_content == 'reveal solution' or msg_content == 'reveal answer' or msg_content == 'show answer' or msg_content == 'show solution' or msg_content == 'reveal' or msg_content == 'show':
-            if trivia_asked:
-                msg_to_send = f'The solution is {data[1]}'
-                trivia_asked = False
+            if self.trivia_asked:
+                msg_to_send = f'The solution is {self.data[1]}'
+                self.trivia_asked = False
             else:
                 msg_to_send = 'please ask for a new trivia question before getting its answer'
 
         elif msg_content == 'random cat fact' or msg_content == 'rcf':
-            data = await get_data('https://catfact.ninja/fact')
-            print(data)
-            msg_to_send = data['fact']
+            self.data = await get_data('https://catfact.ninja/fact')
+            print(self.data)
+            msg_to_send = self.data['fact']
 
         elif msg_content == 'random fact' or msg_content == 'rf':
-            data = await get_data(get_random_question_url())
-            print(data)
+            self.data = await get_data(get_random_question_url())
+            print(self.data)
             try: 
-                msg_to_send = data['data']
+                msg_to_send = self.data['data']
             except KeyError:
-                msg_to_send = data['text']
+                msg_to_send = self.data['text']
 
         elif msg_content == 'joke':
-            data = await get_data('https://official-joke-api.appspot.com/random_joke')
-            _type = data['type']
+            self.data = await get_data('https://official-joke-api.appspot.com/random_joke')
+            _type = self.data['type']
             if _type == 'general':
                 _type = ''
             print(_type)
             e = discord.Embed(title=f'Bad {(_type).capitalize()} Joke', color=discord.Color.red())
-            e.add_field(name='Joke', value=f"{data['setup']} {data['punchline']}", inline=False)
+            e.add_field(name='Joke', value=f"{self.data['setup']} {self.data['punchline']}", inline=False)
             
         elif msg_content == 'bj':
             msg_to_send = 'please use [ado joke]'
 
 
         elif msg_content == 'random trivia' or msg_content == 'rt':
-            difficulty = random.choice(['easy','medium','hard'])
+            self.difficulty = random.choice(['easy','medium','hard'])
             subject = random.choice(list(subject_codes.keys()))
             
-            res = await get_data(base_url, data={'difficulty':difficulty,
+            res = await get_data(trivia_url1, data={'difficulty':self.difficulty,
                                             'category':subject_codes[subject],
-                                            'token': question_token})
+                                            'token': self.question_token})
             if res['response_code'] !=0:
                 res = handel_token_error(res)
-                question_token = res['token']
+                self.question_token = res['token']
 
-            res = await get_data(base_url, data={'difficulty':difficulty,
+            res = await get_data(trivia_url1, data={'difficulty':self.difficulty,
                                             'category':subject_codes[subject],
-                                            'token': question_token})
-            data = process_data(res)
-            msg_to_send = f'SUBJECT: {subject}\nDIFFICULTY: {difficulty}\n\n{data[0]} \navailable answers: {data[2]}'
-            trivia_asked = True
-            trivia_random = True
+                                            'token': self.question_token})
+            self.data = process_data(res)
+            msg_to_send = f'SUBJECT: {subject}\nDIFFICULTY: {self.difficulty}\n\n{self.data[0]} \navailable answers: {self.data[2]}'
+            self.trivia_asked = True
+            self.trivia_random = True
 
         elif msg_content.split()[0] in subject_codes.keys():
             subject = msg_content.split()[0]
 
             if 'easy' in msg_content:
-                difficulty = 'easy'
+                self.difficulty = 'easy'
             elif 'medium' in msg_content:
-                difficulty = 'medium'
+                self.difficulty = 'medium'
             elif 'hard' in msg_content:
-                difficulty = 'hard'
+                self.difficulty = 'hard'
 
-            if difficulty:
-                res = await get_data(base_url, data={'difficulty':difficulty,
+            if self.difficulty:
+                res = await get_data(trivia_url1, data={'difficulty':self.difficulty,
                                                 'category':subject_codes[subject],
-                                                'token': question_token})
+                                                'token': self.question_token})
                 print(res['response_code'])
                 if res['response_code'] !=0:
                     res = handel_token_error(res)
-                    question_token = res['token']
+                    self.question_token = res['token']
                     
-                res = await get_data(base_url, data={'difficulty':difficulty,
+                res = await get_data(trivia_url1, data={'difficulty':self.difficulty,
                                                 'category':subject_codes[subject],
-                                                'token': question_token})
-                data = process_data(res)
-                msg_to_send = f'{data[0]} \navailable answers: {data[2]}'
-                trivia_asked = True
-                trivia_random = False
+                                                'token': self.question_token})
+                self.data = process_data(res)
+                msg_to_send = f'{self.data[0]} \navailable answers: {self.data[2]}'
+                self.trivia_asked = True
+                self.trivia_random = False
 
             else:
                 msg_to_send = 'Try again and please enter a difficulty level (easy, medium, hard)'
@@ -460,26 +401,26 @@ async def on_message(msg):
         else:
             ans = msg_content.lower().strip()
             try:
-                solution = data[1].lower().strip()
+                solution = self.data[1].lower().strip()
             except IndexError as ero:
                 print(f'error {ero}')
             else:
-                if trivia_asked:
+                if self.trivia_asked:
                     if ans in trivia_to_letter.keys():
                         index = trivia_to_letter[ans]
-                        if solution == data[2][index].lower().strip():
+                        if solution == self.data[2][index].lower().strip():
                             msg_to_send = random.choice(win_msgs)
-                            trivia_asked = False
-                            add_points(difficulty, trivia_random, msg)
-                            trivia_random = None
+                            self.trivia_asked = False
+                            self.add_points()
+                            self.trivia_random = None
                         else:
                             msg_to_send = random.choice(loss_msgs)
 
                     elif ans == solution:
                         msg_to_send = random.choice(win_msgs)
-                        trivia_asked = False
-                        add_points(difficulty, trivia_random, msg)          
-                        trivia_random = None
+                        self.trivia_asked = False
+                        self.add_points()          
+                        self.trivia_random = None
                     else:
                         msg_to_send = random.choice(loss_msgs)
 
@@ -488,9 +429,78 @@ async def on_message(msg):
 
         if msg_to_send is not None or e is not None:
             try:
-                await msg.channel.send(msg_to_send, embed=e)
+                await self.msg.channel.send(msg_to_send, embed=e)
             except discord.errors.HTTPException:
                 print('error sending msg')
 
+    def add_points(self):
+        if self.trivia_random:
+            points_to_add = 10
+        else:
+            if self.difficulty == 'easy':
+                points_to_add = random.randint(1, 3)
+            elif self.difficulty == 'medium':
+                points_to_add = random.randint(3, 5)
+            else:
+                points_to_add = random.randint(6, 8)
+        print(points_to_add)
+        self.update_points({self.msg.author.id: points_to_add})
+
+    def get_top_points(self):
+        with open ('points.json') as f:
+            points = json.load(f)
+        
+        points.setdefault(str(self.server_id), {})
+        points = points[str(self.server_id)]
+        top = []
+        int_dict = dict()
+
+        for k, v in points.items():
+            int_dict[k] = int(v)
+        
+        sorted_keys = sorted(int_dict, key=int_dict.get, reverse=True)
+        for i, k in enumerate(sorted_keys):
+            if i<=4:
+                top.append((k, int_dict[k]))
+            else:
+                break 
+        return top
+
+    def update_points(self, dictionary):
+        dd = defaultdict(float)
+        main_dict = dict()
+        dictionary = {str(k): v for k, v in  dictionary.items()}
+        with open ('points.json') as f:
+            points = json.load(f)
+
+        points.setdefault(str(self.server_id), {})
+
+        other = copy.deepcopy(points)
+        del other[str(self.server_id)]
+        main_dict.update(other)
+
+        points = points[str(self.server_id)]
+        dd.update(points)
+        for key, value in dictionary.items():
+            dd[key] += value
+        
+        main_dict[str(self.server_id)] = dd
+        with open('points.json', 'w') as f:
+            json.dump(main_dict, f)
+
+    def get_points(self, user):
+        dd = defaultdict(float)
+        user = str(user)
+        int_dict = dict()
+        with open ('points.json') as f:
+            points = json.load(f)
+        points = points[str(self.server_id)]
+        dd.update(points)
+        for k, v in dd.items():
+            int_dict[k] = int(v)
+        try:
+            return int_dict[user]
+        except KeyError:
+            return 0
 
 client.run(token)
