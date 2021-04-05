@@ -1,7 +1,7 @@
 import asyncio
 import discord
-import base64
-import random
+import base64 
+import random 
 import os
 from help_msg import help_msg, help_weather_msg
 import json
@@ -11,9 +11,29 @@ from collections import defaultdict
 import copy
 from aiohttp import ClientSession
 import html
+import time
+import youtube_dl
+import requests
 
-token = private_data.ids['discord']
-weather_token = private_data.ids['weather']
+'''
+# Features to add #
+
+- daily would you rather questions 
+- add time for the trivia questions 
+- add the functionality to follow sports social media (twitter - instagram - reddit...)
+- apply the new trivia api for the spesific trivias (its already implimented for random trivia)
+- add a daily trivia question with 20 points and 30 seconds to answer
+- add the functionality for daily weather 
+- add a shop for users to use up their points 
+- fix async problem 
+- fix the code (how it looks)
+- youtube music
+- spotify music
+- ado challenge 
+'''
+
+token = private_data.discord_id
+weather_token = private_data.weather_api_id
 
 client = discord.Client()
 trivia1_url = 'https://opentdb.com/api.php?amount=1&encode=base64' # url to get trivia1
@@ -79,6 +99,53 @@ def generate_loss_msg(solution):
             f'Pfftt, the answer was {solution}']
     msg = random.choice(loss_msgs)
     return msg
+
+
+# Suppress noise about console usage from errors
+youtube_dl.utils.bug_reports_message = lambda: ''
+
+ytdl_format_options = {
+    'format': 'bestaudio/best',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0' # bind to ipv4 since ipv6 addresses cause issues sometimes
+}
+
+ffmpeg_options = {
+    'options': '-vn'
+}
+ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
+
+
+class YTDLSource(discord.PCMVolumeTransformer):
+    def __init__(self, source, *, data, volume=0.5):
+        super().__init__(source, volume)
+
+        self.data = data
+
+        self.title = data.get('title')
+        self.url = data.get('url')
+
+    @classmethod
+    async def from_url(cls, url, *, loop=None, stream=False):
+        loop = loop or asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+
+        if 'entries' in data:
+            # take first item from a playlist
+            data = data['entries'][0]
+
+        filename = data['url'] if stream else ytdl.prepare_filename(data)
+        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+
+
 
 async def get_data(url, data={}):
     async with ClientSession() as session:
@@ -229,7 +296,8 @@ async def on_message(msg):
 
     msg_content = msg.content.lower().strip()
      
-    if msg_content.startswith('ado '):
+    if msg_content.startswith('ado ') and msg.author.id != client.user.id:
+
         
         try: 
             s = dict_of_servers[msg.guild.id]
@@ -245,9 +313,9 @@ async def on_message(msg):
 
 
 
-class Server:
-    def __init__(self, server_id):
-        self.server_id = server_id
+class Server:    
+    def __init__(self, server):
+        self.server_id = server
         self.trivia_asked = False
         self.trivia_random = None
         self.difficulty = None
@@ -256,7 +324,21 @@ class Server:
         self.solution = None
         self.available_answers = None
         self.daily_trivia_users = {}
+        self.voice_channel_controller = None 
+        self.voice_channel = None
         print(self.question_token)
+
+        with open('challenge.json') as f:
+            data = json.load(f)
+            try:
+                b = data[str(self.server_id)]['active']
+            except KeyError:
+                self.challenge = False
+            else:
+                if b == 'True':
+                    self.challenge = True
+                else:
+                    self.challenge = False
 
     async def async_init(self):
         self.question_token = await get_data(token_url)
@@ -272,12 +354,12 @@ class Server:
 
         if msg_content == 'help':
             e = help_msg
-
-        elif msg_content == 'test':
-            msg_to_send = '!p 2002'
             
         elif msg_content == 'ping':
-            msg_to_send = f'Pong! Your latency is {round(client.latency * 1000)}ms'
+            before = time.monotonic()
+            message = await self.msg.channel.send("Pong!")
+            ping = (time.monotonic() - before) * 1000
+            await message.edit(content=f"Pong!  `{int(ping)}ms`")
         
         elif msg_content == 'restart':
             if self.msg.author.id == 739167113880535191:
@@ -285,7 +367,11 @@ class Server:
                     await self.msg.channel.send('Restarting Ado Bot')
                 except discord.errors.HTTPException:
                     print('network error')
-                    
+
+                # disconnect from all voice channels 
+                for vc in client.voice_clients:
+                    await vc.disconnect()
+
                 print('restarting \n\n\n\n')
                 os.system('bash startup.sh')
             else:
@@ -298,11 +384,49 @@ class Server:
             msg_to_send = msg_content[4:]
             tts = True 
 
-        elif msg_content.startswith('w'):
+
+        elif msg_content == 'join' or msg_content == 'connect': #todo
+            self.voice_channel = self.msg.author.voice
+
+            if self.voice_channel is None:
+                msg_to_send = 'You are not in a voice channel'
+            else:
+                self.voice_channel = self.msg.author.voice.channel
+                try:
+                    self.voice_channel_controller = await self.voice_channel.connect()
+                except discord.errors.ClientException:
+                    await self.voice_channel_controller.move_to(self.voice_channel)
+                
+                msg_to_send = f'ado joined {self.voice_channel}'
+                print(f'connected to {self.voice_channel}')
+        
+        elif msg_content == 'leave' or msg_content == 'exit' or msg_content == 'disconnect': 
+            if self.voice_channel_controller is not None:
+                await self.voice_channel_controller.disconnect()
+                self.voice_channel_controller = None
+                msg_to_send = f'Ok I will leave {self.voice_channel}'
+                self.voice_channel = None
+            else: 
+                msg_to_send = 'I\'m already out of the voice channel'
+
+
+        elif msg_content.startswith('yt '):
+            if self.voice_channel_controller is not None:
+                url = msg_content[3:]
+                await msg.channel.send('getting data')
+                player = await YTDLSource.from_url(url, stream=True)
+                self.voice_channel_controller.play(player, after=lambda e: print('Player error: %s' % e) if e else None)
+
+                msg_to_send = f'Now playing: {player.title}'
+            else:
+                msg_to_send = 'I am not in a voice channel. Type ado join in order for me to enter'
+
+
+        elif msg_content.startswith('w '):
             error_msg = 'please use "ado help weather" to see commands for weather'
-            error_msg2 = 'Please enter a valid city. If you are sure the city/provence is an actual place please report problem to <@!739167113880535191>'
+            error_msg2 = 'Please enter a valid city. If you are sure the city/provence is an actual place please report problem to a Adam_k'
             try:
-                city, country = msg_content[1:].split(',')
+                city, country = msg_content[2:].split(',')
                 city, country = city.strip(), country.strip()
             except ValueError:
                 msg_to_send = error_msg
@@ -328,20 +452,85 @@ class Server:
                         
                 else:
                     msg_to_send = f'Sorry city/provence was not found. {error_msg2}'
+        
+
+        elif msg_content == 'start challenge':
+            if not self.challenge:
+                admin_role = discord.utils.find(lambda r: r.name == 'ado admin', self.msg.guild.roles)
+
+                if admin_role in self.msg.author.roles:
+                    self.challenge = True
+
+                    with open('challenge.json', 'r') as f:
+                        data = json.load(f)
+                        data[str(self.server_id)] = {'active': 'True'}
+                    with open('challenge.json', 'w') as f:
+                        json.dump(data, f)
+
+                    msg_to_send = 'Challenge started'
+                else:
+                    msg_to_send = 'You need to have an "ado admin" role in order to start a challenge'
+            
+            else: 
+                msg_to_send = 'There is a challenge already'
+
+        elif msg_content == 'stop challenge':
+            admin_role = discord.utils.find(lambda r: r.name == 'ado admin', self.msg.guild.roles)
+            if admin_role in self.msg.author.roles:
+                self.challenge = False
                 
+                with open('challenge.json', 'r') as f:
+                    data = json.load(f)
+                    data[str(self.server_id)] = {'active': 'False'}
+                with open('challenge.json', 'w') as f:
+                    json.dump(data, f)
+
+                msg_to_send = 'Challenge stopped'
+            else:
+                msg_to_send = 'You need to have an "ado admin" role in order to stop the challenge'
+
+
+        elif msg_content.startswith('challenge points'):
+            print(self.challenge)
+            if self.challenge:
+                if msg_content == 'challenge points':
+                    points = self.get_points(self.msg.author.id, 'challenge.json')
+                    msg_to_send = f'you have {points} challenge points'
+                
+                elif len(self.msg.mentions) == 1:
+                    user = self.msg.mentions[0].id
+                    points = self.get_points(user, 'challenge.json')
+                    msg_to_send = f'{self.msg.mentions[0].mention} has {points} challenge points'
+                
+                elif msg_content.split()[2] == 'top':
+                    with open ('challenge.json') as f:
+                        points = json.load(f)
+
+                    top = self.get_top_points(points)
+                    e = discord.Embed(title='Top challenge points', color=discord.Color.red())
+                    for k, v in top:
+                        user = await client.fetch_user(k)
+                        e.add_field(name=f'{user.name}', value=v, inline=False)
+
+            else:
+                msg_to_send = 'There is no challenge....'
+
 
         elif msg_content.startswith('points'):
             if msg_content == "points":
-                points = self.get_points(self.msg.author.id)
+                points = self.get_points(self.msg.author.id, 'points.json')
                 msg_to_send = f'you have {points} points'
 
             elif len(self.msg.mentions) == 1:
                 user = self.msg.mentions[0].id
-                points = self.get_points(user)
+                points = self.get_points(user, 'points.json')
                 msg_to_send = f'{self.msg.mentions[0].mention} has {points} points'
             
             elif msg_content.split()[1] == 'top':
-                top = self.get_top_points()
+                with open ('points.json') as f:
+                    points = json.load(f)
+
+                top = self.get_top_points(points)
                 e = discord.Embed(title='Top points', color=discord.Color.red())
                 for k, v in top:
                     user = await client.fetch_user(k)
@@ -363,13 +552,13 @@ class Server:
                 msg_to_send = 'You didn\'t mention who you wanted to kill. I really thought humans were smarter than this'
             else:
                 msg_to_send = f'{self.msg.author.mention}, you just killed {user_id}'
-            
+        
         elif msg_content == 'random cat fact' or msg_content == 'rcf':
             data = await get_data(rcf_url)
             print(data)
             msg_to_send = data['fact']
 
-        elif msg_content == 'daily':
+        elif msg_content == 'daily':  #todo
             with open ('daily_trivia.json') as f:
                 data = json.load(f)
 
@@ -489,7 +678,9 @@ class Server:
                         if self.solution == user_answer:
                             msg_to_send = random.choice(win_msgs)
                             self.trivia_asked = False
-                            self.add_points()
+                            self.add_points('points.json')
+                            if self.challenge:
+                                self.add_points('challenge.json')
                             self.trivia_random = None
                         else:
                             msg_to_send = generate_loss_msg(self.solution)
@@ -498,7 +689,9 @@ class Server:
                 elif ans == self.solution:
                     msg_to_send = random.choice(win_msgs)
                     self.trivia_asked = False
-                    self.add_points()          
+                    self.add_points('points.json')
+                    if self.challenge:
+                        self.add_points('challenge.json')          
                     self.trivia_random = None
                 else:
                     msg_to_send = generate_loss_msg(self.solution)
@@ -513,30 +706,30 @@ class Server:
             except discord.errors.HTTPException:
                 print('error sending msg')
 
-    def add_points(self):
-        if self.trivia_random:
+    def add_points(self, file_name):
+        if self.trivia_random: # 25 AND THE DAILY IS 30
             points_to_add = 10
         else:
-            if self.difficulty == 'easy':
+            if self.difficulty == 'easy': # 20
                 points_to_add = random.randint(1, 3)
             elif self.difficulty == 'medium':
                 points_to_add = random.randint(3, 5)
             else:
                 points_to_add = random.randint(6, 8)
         print(points_to_add)
-        self.update_points({self.msg.author.id: points_to_add})
+        self.update_points({self.msg.author.id: points_to_add}, file_name)
 
-    def get_top_points(self):
-        with open ('points.json') as f:
-            points = json.load(f)
-        
+    def get_top_points(self, points):
         points.setdefault(str(self.server_id), {})
         points = points[str(self.server_id)]
         top = []
         int_dict = dict()
 
         for k, v in points.items():
-            int_dict[k] = int(v)
+            try:
+                int_dict[k] = int(v)
+            except ValueError as e:
+                print(f'{e} error. dont worry about it')
         
         sorted_keys = sorted(int_dict, key=int_dict.get, reverse=True)
         for i, k in enumerate(sorted_keys):
@@ -546,11 +739,11 @@ class Server:
                 break 
         return top
 
-    def update_points(self, dictionary):
+    def update_points(self, dictionary, file_name):
         dd = defaultdict(float)
         main_dict = dict()
         dictionary = {str(k): v for k, v in  dictionary.items()}
-        with open ('points.json') as f:
+        with open (file_name) as f:
             points = json.load(f)
 
         points.setdefault(str(self.server_id), {})
@@ -565,19 +758,22 @@ class Server:
             dd[key] += value
         
         main_dict[str(self.server_id)] = dd
-        with open('points.json', 'w') as f:
+        with open(file_name, 'w') as f:
             json.dump(main_dict, f)
 
-    def get_points(self, user):
+    def get_points(self, user, file_name):
         dd = defaultdict(float)
         user = str(user)
         int_dict = dict()
-        with open ('points.json') as f:
+        with open (file_name) as f:
             points = json.load(f)
         points = points[str(self.server_id)]
         dd.update(points)
         for k, v in dd.items():
-            int_dict[k] = int(v)
+            try:
+                int_dict[k] = int(v)
+            except ValueError as e:
+                print(f'{e} probably it is an error from the activate key in the challenge json dw about it')
         try:
             return int_dict[user]
         except KeyError:
